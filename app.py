@@ -1,6 +1,5 @@
 import io
 import zipfile
-import tempfile
 from pathlib import Path
 
 import cv2
@@ -10,7 +9,7 @@ from paddleocr import PaddleOCR
 import easyocr
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Model loading — cached so they only load once per session
+# Model loading
 # ══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_resource
@@ -244,53 +243,109 @@ def bytes_to_cv2(data):
 # Streamlit UI
 # ══════════════════════════════════════════════════════════════════════════════
 
-st.set_page_config(page_title="Medical Image De-identifier", layout="centered")
-st.title("🏥 Medical Image De-identifier")
-st.caption("Removes patient text from endoscopy frames and cholangiography panels.")
-
-uploaded_files = st.file_uploader(
-    "Upload image(s)",
-    type=["png", "jpg", "jpeg", "bmp", "tif", "tiff"],
-    accept_multiple_files=True,
+st.set_page_config(
+    page_title="Medical Image De-identifier",
+    page_icon="🏥",
+    layout="wide",
 )
 
-if uploaded_files:
-    if st.button("🚀 Process", type="primary"):
-        results = []
+# ── Custom CSS ────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+.banner {
+    background: linear-gradient(90deg, #003366 0%, #005599 100%);
+    padding: 2rem 2.5rem 1.5rem 2.5rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+}
+.banner h1 {
+    color: #ffffff;
+    font-size: 2.2rem;
+    font-weight: 700;
+    margin: 0 0 0.2rem 0;
+    letter-spacing: 0.03em;
+}
+.banner p {
+    color: #c8ddf2;
+    font-size: 1.15rem;
+    margin: 0;
+}
+.banner .subtitle {
+    color: #a0c0e0;
+    font-size: 1.5rem;
+    margin-top: 0.3rem;
+}
+</style>
+""", unsafe_allow_html=True)
 
-        for uploaded in uploaded_files:
-            with st.spinner(f"Processing {uploaded.name}…"):
-                img = bytes_to_cv2(uploaded.read())
-                if img is None:
-                    st.error(f"Could not read {uploaded.name}")
-                    continue
+# Centered content container
+_, center, _ = st.columns([1, 3, 1])
 
-                out_img, mode = process_image(img)
-                out_bytes = img_to_png_bytes(out_img)
-                results.append((uploaded.name, out_bytes, mode))
-                st.success(f"✅ {uploaded.name} — {mode} pipeline")
+with center:
+    st.markdown("""
+    <div class="banner">
+        <h1>Clinicum Digitale</h1>
+        <div class="subtitle">🏥 Medical Image De-identifier</div>
+        <p>Automatically removes patient identifying text from endoscopy and cholangiography images.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-        if results:
-            st.divider()
+    uploaded_files = st.file_uploader(
+        "Upload image(s)",
+        type=["png", "jpg", "jpeg", "bmp", "tif", "tiff"],
+        accept_multiple_files=True,
+    )
 
-            if len(results) == 1:
-                name, data, _ = results[0]
-                st.download_button(
-                    label=f"⬇️ Download {name}",
-                    data=data,
-                    file_name=f"deidentified_{name}",
-                    mime="image/png",
-                )
-            else:
-                # Multiple files → zip
-                zip_buf = io.BytesIO()
-                with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                    for name, data, _ in results:
-                        zf.writestr(f"deidentified_{Path(name).stem}.png", data)
-                zip_buf.seek(0)
-                st.download_button(
-                    label=f"⬇️ Download all ({len(results)} files)",
-                    data=zip_buf,
-                    file_name="deidentified_images.zip",
-                    mime="application/zip",
-                )
+    if uploaded_files:
+        if st.button("🚀 Process", type="primary"):
+            results = []
+
+            for uploaded in uploaded_files:
+                with st.spinner(f"Processing {uploaded.name}…"):
+                    raw = uploaded.read()
+                    img = bytes_to_cv2(raw)
+                    if img is None:
+                        st.error(f"Could not read {uploaded.name}")
+                        continue
+
+                    out_img, mode = process_image(img)
+                    out_bytes = img_to_png_bytes(out_img)
+                    results.append((uploaded.name, raw, out_bytes, mode))
+
+            if results:
+                st.divider()
+
+                for name, orig_bytes, out_bytes, mode in results:
+                    st.subheader(name)
+                    st.caption(f"Pipeline: **{mode}**")
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("**Original**")
+                        st.image(orig_bytes, use_container_width=True)
+                    with col2:
+                        st.markdown("**De-identified**")
+                        st.image(out_bytes, use_container_width=True)
+
+                    st.download_button(
+                        label=f"⬇️ Download de-identified {name}",
+                        data=out_bytes,
+                        file_name=f"deidentified_{Path(name).stem}.png",
+                        mime="image/png",
+                        key=name,
+                    )
+                    st.divider()
+
+                if len(results) > 1:
+                    zip_buf = io.BytesIO()
+                    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for name, _, out_bytes, _ in results:
+                            zf.writestr(f"deidentified_{Path(name).stem}.png", out_bytes)
+                    zip_buf.seek(0)
+                    st.download_button(
+                        label=f"⬇️ Download all ({len(results)} files as ZIP)",
+                        data=zip_buf,
+                        file_name="deidentified_images.zip",
+                        mime="application/zip",
+                        key="zip_all",
+                    )
