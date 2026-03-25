@@ -294,7 +294,7 @@ with center:
     <div class="banner">
         <h1>Clinicum Digitale</h1>
         <div class="subtitle">🏥 Medical Image De-identifier</div>
-        <p>Automatically removes patient identifying text from endoscopy and cholangiography images.</p>
+        <p>Automatically removes identifying text from medical images.</p>
     </div>
     """, unsafe_allow_html=True)
 
