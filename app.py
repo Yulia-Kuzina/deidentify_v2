@@ -7,6 +7,8 @@ import numpy as np
 import streamlit as st
 from paddleocr import PaddleOCR
 import easyocr
+from PIL import Image, ExifTags
+import io
 
 
 # Model loading
@@ -215,11 +217,53 @@ def process_frame(img):
 # Dispatch
 
 PANEL_THRESHOLD = 2
+def fix_orientation(img_bytes):
+    pil = Image.open(io.BytesIO(img_bytes))
+    try:
+        for key in ExifTags.TAGS.keys():
+            if ExifTags.TAGS[key] == 'Orientation':
+                break
+        exif = pil._getexif()
+        if exif and key in exif:
+            orientation = exif[key]
+            if orientation == 3:
+                pil = pil.rotate(180, expand=True)
+            elif orientation == 6:
+                pil = pil.rotate(270, expand=True)
+            elif orientation == 8:
+                pil = pil.rotate(90, expand=True)
+    except:
+        pass
+    buf = io.BytesIO()
+    pil.save(buf, format='PNG')
+    return buf.getvalue()
 
-def process_image(img):
+def bytes_to_cv2(data):
+    arr = np.frombuffer(data, dtype=np.uint8)
+    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+def img_to_png_bytes(img):
+    success, buf = cv2.imencode(".png", img)
+    return buf.tobytes() if success else None
+
+def process_image(input_path, output_path):
+    raw = open(str(input_path), 'rb').read()
+    raw = fix_orientation(raw)
+    img = bytes_to_cv2(raw)
+    if img is None:
+        print(f"  [SKIP] Could not read: {input_path}")
+        return
+
+    print(f"\nProcessing: {input_path.name}")
+
     panels = find_panels(img)
-    if len(panels) >= PANEL_THRESHOLD:
-        return process_panels(img), "panels"
+    n = len(panels)
+    print(f"  Panel detection: {n} panel(s) found → ", end="")
+
+    if n >= PANEL_THRESHOLD:
+        print("panels pipeline")
+        process_panels(img, str(output_path))
+        return
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 18, 255, cv2.THRESH_BINARY)
@@ -233,21 +277,11 @@ def process_image(img):
             has_frame = True
 
     if has_frame:
-        return process_frame(img), "frame"
-
-    return process_generic(img), "generic"
-
-
-def img_to_png_bytes(img):
-    success, buf = cv2.imencode(".png", img)
-    return buf.tobytes() if success else None
-
-
-def bytes_to_cv2(data):
-    arr = np.frombuffer(data, dtype=np.uint8)
-    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
-
-
+        print("frame pipeline")
+        process_frame(img, str(output_path))
+    else:
+        print("generic pipeline")
+        process_generic(img, str(output_path))
 
 # Streamlit UI
 
