@@ -7,11 +7,10 @@ import numpy as np
 import streamlit as st
 from paddleocr import PaddleOCR
 import easyocr
-from PIL import Image, ExifTags
-import io
 
-
+# ══════════════════════════════════════════════════════════════════════════════
 # Model loading
+# ══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_resource
 def get_paddle():
@@ -22,8 +21,9 @@ def get_easy():
     return easyocr.Reader(['en'], gpu=False)
 
 
-
+# ══════════════════════════════════════════════════════════════════════════════
 # PANELS pipeline
+# ══════════════════════════════════════════════════════════════════════════════
 
 def find_panels(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -76,7 +76,7 @@ def find_panels(img):
 
     if panels:
         x1, _, x2, _ = panels[0]
-        for y in range(min(y2, gray_filtered.shape[0] - 1), y1, -1):
+        for y in range(y2, y1, -1):
             row_b = np.mean(gray_filtered[y, x1:x2])
             if row_b > 15:
                 y2 = y + 5
@@ -159,7 +159,9 @@ def process_panels(img):
     return result
 
 
+# ══════════════════════════════════════════════════════════════════════════════
 # FRAMES pipeline
+# ══════════════════════════════════════════════════════════════════════════════
 
 CONFIDENCE_THRESHOLD = 0.05
 INPAINT_RADIUS       = 10
@@ -213,63 +215,33 @@ def process_frame(img):
     return remove_text(img)
 
 
-
+# ══════════════════════════════════════════════════════════════════════════════
 # Dispatch
+# ══════════════════════════════════════════════════════════════════════════════
 
 PANEL_THRESHOLD = 2
-def fix_orientation(img_bytes):
-    pil = Image.open(io.BytesIO(img_bytes))
-    try:
-        for key in ExifTags.TAGS.keys():
-            if ExifTags.TAGS[key] == 'Orientation':
-                break
-        exif = pil._getexif()
-        if exif and key in exif:
-            orientation = exif[key]
-            if orientation == 3:
-                pil = pil.rotate(180, expand=True)
-            elif orientation == 6:
-                pil = pil.rotate(270, expand=True)
-            elif orientation == 8:
-                pil = pil.rotate(90, expand=True)
-    except:
-        pass
-    buf = io.BytesIO()
-    pil.save(buf, format='PNG')
-    return buf.getvalue()
 
-def bytes_to_cv2(data):
-    arr = np.frombuffer(data, dtype=np.uint8)
-    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+def process_image(img):
+    panels = find_panels(img)
+    if len(panels) >= PANEL_THRESHOLD:
+        return process_panels(img), "panels"
+    else:
+        return process_frame(img), "frame"
+
 
 def img_to_png_bytes(img):
     success, buf = cv2.imencode(".png", img)
     return buf.tobytes() if success else None
 
-def process_image(img):
-    panels = find_panels(img)
-    n = len(panels)
 
-    if n >= PANEL_THRESHOLD:
-        return process_panels(img), "panels"
+def bytes_to_cv2(data):
+    arr = np.frombuffer(data, dtype=np.uint8)
+    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 18, 255, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    H, W = gray.shape
-    has_frame = False
-    if contours:
-        largest = max(contours, key=cv2.contourArea)
-        x, y, w, h = cv2.boundingRect(largest)
-        if w * h >= 0.30 * H * W:
-            has_frame = True
 
-    if has_frame:
-        return process_frame(img), "frame"
-
-    return process_generic(img), "generic"
-
+# ══════════════════════════════════════════════════════════════════════════════
 # Streamlit UI
+# ══════════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
     page_title="Medical Image De-identifier",
@@ -288,19 +260,19 @@ st.markdown("""
 }
 .banner h1 {
     color: #ffffff;
-    font-size: 1.6rem;
+    font-size: 2.2rem;
     font-weight: 700;
     margin: 0 0 0.2rem 0;
     letter-spacing: 0.03em;
 }
 .banner p {
     color: #c8ddf2;
-    font-size: 0.95rem;
+    font-size: 1.15rem;
     margin: 0;
 }
 .banner .subtitle {
     color: #a0c0e0;
-    font-size: 1rem;
+    font-size: 1.5rem;
     margin-top: 0.3rem;
 }
 </style>
@@ -331,7 +303,6 @@ with center:
             for uploaded in uploaded_files:
                 with st.spinner(f"Processing {uploaded.name}…"):
                     raw = uploaded.read()
-                    raw = fix_orientation(raw)
                     img = bytes_to_cv2(raw)
                     if img is None:
                         st.error(f"Could not read {uploaded.name}")
