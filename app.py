@@ -201,7 +201,7 @@ def crop_black_frame(img):
     if w * h < 0.30 * H * W:
         return img
     PAD = 3
-    x  = max(0, x - PAD)a
+    x  = max(0, x - PAD)
     y  = max(0, y - PAD)
     x2 = min(W, x + w + 2 * PAD)
     y2 = min(H, y + h + 2 * PAD)
