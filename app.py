@@ -246,24 +246,12 @@ def img_to_png_bytes(img):
     success, buf = cv2.imencode(".png", img)
     return buf.tobytes() if success else None
 
-def process_image(input_path, output_path):
-    raw = open(str(input_path), 'rb').read()
-    raw = fix_orientation(raw)
-    img = bytes_to_cv2(raw)
-    if img is None:
-        print(f"  [SKIP] Could not read: {input_path}")
-        return
-
-    print(f"\nProcessing: {input_path.name}")
-
+def process_image(img):
     panels = find_panels(img)
     n = len(panels)
-    print(f"  Panel detection: {n} panel(s) found → ", end="")
 
     if n >= PANEL_THRESHOLD:
-        print("panels pipeline")
-        process_panels(img, str(output_path))
-        return
+        return process_panels(img), "panels"
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 18, 255, cv2.THRESH_BINARY)
@@ -277,11 +265,9 @@ def process_image(input_path, output_path):
             has_frame = True
 
     if has_frame:
-        print("frame pipeline")
-        process_frame(img, str(output_path))
-    else:
-        print("generic pipeline")
-        process_generic(img, str(output_path))
+        return process_frame(img), "frame"
+
+    return process_generic(img), "generic"
 
 # Streamlit UI
 
@@ -345,6 +331,7 @@ with center:
             for uploaded in uploaded_files:
                 with st.spinner(f"Processing {uploaded.name}…"):
                     raw = uploaded.read()
+                    raw = fix_orientation(raw)
                     img = bytes_to_cv2(raw)
                     if img is None:
                         st.error(f"Could not read {uploaded.name}")
