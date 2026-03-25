@@ -8,9 +8,8 @@ import streamlit as st
 from paddleocr import PaddleOCR
 import easyocr
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # Model loading
-# ══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_resource
 def get_paddle():
@@ -21,9 +20,8 @@ def get_easy():
     return easyocr.Reader(['en'], gpu=False)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # PANELS pipeline
-# ══════════════════════════════════════════════════════════════════════════════
 
 def find_panels(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -76,7 +74,7 @@ def find_panels(img):
 
     if panels:
         x1, _, x2, _ = panels[0]
-        for y in range(y2, y1, -1):
+        for y in range(min(y2, gray_filtered.shape[0] - 1), y1, -1):
             row_b = np.mean(gray_filtered[y, x1:x2])
             if row_b > 15:
                 y2 = y + 5
@@ -159,9 +157,7 @@ def process_panels(img):
     return result
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # FRAMES pipeline
-# ══════════════════════════════════════════════════════════════════════════════
 
 CONFIDENCE_THRESHOLD = 0.05
 INPAINT_RADIUS       = 10
@@ -215,9 +211,8 @@ def process_frame(img):
     return remove_text(img)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # Dispatch
-# ══════════════════════════════════════════════════════════════════════════════
 
 PANEL_THRESHOLD = 2
 
@@ -225,8 +220,22 @@ def process_image(img):
     panels = find_panels(img)
     if len(panels) >= PANEL_THRESHOLD:
         return process_panels(img), "panels"
-    else:
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 18, 255, cv2.THRESH_BINARY)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    H, W = gray.shape
+    has_frame = False
+    if contours:
+        largest = max(contours, key=cv2.contourArea)
+        x, y, w, h = cv2.boundingRect(largest)
+        if w * h >= 0.30 * H * W:
+            has_frame = True
+
+    if has_frame:
         return process_frame(img), "frame"
+
+    return process_generic(img), "generic"
 
 
 def img_to_png_bytes(img):
@@ -239,9 +248,8 @@ def bytes_to_cv2(data):
     return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # Streamlit UI
-# ══════════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
     page_title="Medical Image De-identifier",
@@ -260,19 +268,19 @@ st.markdown("""
 }
 .banner h1 {
     color: #ffffff;
-    font-size: 2.2rem;
+    font-size: 1.6rem;
     font-weight: 700;
     margin: 0 0 0.2rem 0;
     letter-spacing: 0.03em;
 }
 .banner p {
     color: #c8ddf2;
-    font-size: 1.15rem;
+    font-size: 0.95rem;
     margin: 0;
 }
 .banner .subtitle {
     color: #a0c0e0;
-    font-size: 1.5rem;
+    font-size: 1rem;
     margin-top: 0.3rem;
 }
 </style>
@@ -286,7 +294,7 @@ with center:
     <div class="banner">
         <h1>Clinicum Digitale</h1>
         <div class="subtitle">🏥 Medical Image De-identifier</div>
-        <p>Automatically removes identifying text from medical images.</p>
+        <p>Automatically removes patient identifying text from endoscopy and cholangiography images.</p>
     </div>
     """, unsafe_allow_html=True)
 
