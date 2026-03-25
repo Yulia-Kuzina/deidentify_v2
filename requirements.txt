@@ -4,4 +4,3 @@ paddlepaddle==2.6.2
 easyocr==1.7.2
 opencv-python-headless==4.11.0.86
 numpy==1.26.4
-Pillow
